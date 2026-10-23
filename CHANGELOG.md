@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 (2026-10-23)
+
+- Le plugin est maintenant un widget de barre : une icône de curseur teintée
+  de la couleur actuelle ouvre le sélecteur en popup, comme les autres
+  widgets. `cursor-color open` ouvre ce popup.
+- Disque de couleurs HSV + barre de luminosité à la place des 16 couleurs
+  prédéfinies : survol pour prévisualiser, clic / glisser pour choisir.
+- Le champ hex place le disque sur la couleur tapée.
+
 ## 1.0.0 (2026-10-23)
 
 - Première version, basée sur cursor-accent 1.1.0.

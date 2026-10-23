@@ -2,18 +2,25 @@
   "schemaVersion": 1,
   "id": "io.github.ldockwiller.cursor-color",
   "name": "Cursor Color",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "LDockwiller",
   "license": "GPL-3.0-or-later",
   "homepage": "https://github.com/LDockwiller/cursor-color",
-  "description": "Couleur du curseur qui suit automatiquement le thème Omarchy, avec une palette et un code hex pour la choisir soi-même.",
+  "description": "Couleur du curseur qui suit automatiquement le thème Omarchy, ou choisie librement sur un disque de couleurs depuis la barre.",
   "kinds": [
-    "service",
-    "overlay"
+    "bar-widget",
+    "service"
   ],
   "keepLoaded": true,
   "entryPoints": {
-    "service": "Service.qml",
-    "overlay": "Picker.qml"
+    "barWidget": "BarWidget.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Cursor Color",
+    "description": "Couleur du curseur : suit le thème ou se choisit sur un disque de couleurs.",
+    "category": "Appearance",
+    "defaultSection": "right",
+    "allowMultiple": false
   }
 }

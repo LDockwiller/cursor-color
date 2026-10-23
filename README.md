@@ -5,8 +5,12 @@ Plugin Omarchy qui colore le curseur de la souris :
 - **automatiquement selon le thème** — par défaut il prend la couleur
   `accent` du thème actif et se met à jour tout seul à chaque
   `omarchy theme set` ;
-- **ou avec la couleur de ton choix** — depuis une palette, un code hex
+- **ou avec la couleur de ton choix** — sur un disque de couleurs (on
+  déplace la souris dessus pour viser la teinte exacte), avec un code hex
   (`#rrggbb`), ou une couleur prise à l'écran avec la pipette.
+
+Le plugin ajoute une icône dans la barre (un curseur, teinté de la couleur
+actuelle) ; un clic ouvre le sélecteur.
 
 ![Sélecteur de couleur du curseur](assets/picker.png)
 
@@ -22,7 +26,9 @@ du thème, et le suivi du thème sans hook à installer.
 omarchy plugin add https://github.com/LDockwiller/cursor-color.git --enable
 ```
 
-C'est tout : le service du plugin applique la couleur dès qu'il est chargé,
+L'icône apparaît dans la barre (section de droite par défaut, déplaçable avec
+`omarchy bar move` ou `omarchy plugin enable <id> --after <autre-widget>`).
+Le service du plugin applique la couleur dès qu'il est chargé,
 puis surveille le `colors.toml` du thème actif et recolore le curseur à chaque
 changement de thème.
 
@@ -32,22 +38,19 @@ changement de thème.
 
 ## Choisir la couleur
 
-Ouvre le sélecteur :
-
-```sh
-~/.config/omarchy/plugins/io.github.ldockwiller.cursor-color/cursor-color open
-```
+Clique sur l'icône du plugin dans la barre (ou lance
+`~/.config/omarchy/plugins/io.github.ldockwiller.cursor-color/cursor-color open`).
 
 | Section | Effet |
 | --- | --- |
 | **Suivre le thème** | Les couleurs du thème actif (accent, curseur du terminal, texte, rouge, bleu…). Le curseur garde ce *rôle* et change de teinte avec le thème. |
-| **Palette** | 16 couleurs prédéfinies. Couleur fixe, indépendante du thème. |
+| **Couleur libre** | Disque de couleurs : l'angle donne la teinte, la distance au centre la saturation. Survoler le disque prévisualise la couleur dans l'en-tête ; cliquer ou glisser la sélectionne, relâcher l'applique. La barre en dessous règle la luminosité. Couleur fixe, indépendante du thème. |
+| **Code / pipette** | Tape un code `#rrggbb` (ou `#rgb`) puis Entrée / *Appliquer* — le disque se place dessus. Le bouton pipette prend une couleur n'importe où à l'écran (`hyprpicker`). |
 | **Récentes** | Les 8 dernières couleurs fixes utilisées. |
-| **Code couleur** | Tape un code `#rrggbb` (ou `#rgb`) puis Entrée / *Appliquer*. Le bouton pipette prend une couleur n'importe où à l'écran (`hyprpicker`). |
 | **Apparence** | Forme *Arrondi* / *Pointu*, et style *Contour* (contour coloré, corps sombre) ou *Rempli* (corps coloré, contour sombre). |
 | **Utiliser le curseur système** | Désactive la recoloration et revient au curseur par défaut. |
 
-`Échap` ou un clic en dehors ferme le sélecteur.
+`Échap` ou un clic en dehors ferme le sélecteur. Tab passe aux popups des autres widgets.
 
 ### Raccourci clavier (optionnel)
 
@@ -104,8 +107,10 @@ hyprctl setcursor default 24
   compile le thème hyprcursor dans `~/.local/share/icons/Omarchy-CursorColor`
   puis l'applique avec `hyprctl setcursor`. Si les couleurs n'ont pas changé,
   il saute la compilation.
-- `Picker.qml` (overlay) est le sélecteur ; il passe par la commande
-  `cursor-color`, comme le terminal.
+- `BarWidget.qml` est l'icône de la barre ; elle ouvre `Panel.qml`, le
+  sélecteur, qui passe par la commande `cursor-color` comme le terminal.
+- `ColorWheel.qml` dessine le disque HSV avec deux dégradés GPU (conique pour
+  la teinte, radial blanc → transparent pour la saturation).
 
 `src/`, `svg/` et `config/` proviennent de
 [rtgiskard/bibata_cursor](https://github.com/rtgiskard/bibata_cursor) (voir

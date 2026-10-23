@@ -2,42 +2,40 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
-import Quickshell.Wayland
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// Palette picker, summoned with `cursor-color open` (or
-// `omarchy-shell shell summon io.github.ldockwiller.cursor-color '{}'`).
-// Every choice goes through the bundled `cursor-color` command, so the
-// picker, the CLI and the menu entry share the same config file.
-Item {
+// Picker popup opened from the bar button. Every choice goes through the
+// bundled `cursor-color` command, so the popup, the CLI and the menu entry
+// share the same config file.
+Panel {
   id: root
+  moduleName: "io.github.ldockwiller.cursor-color"
+  ipcTarget: "cursor-color"
+  manageIpc: false
 
-  property var shell: null
-  property var manifest: null
+  property var anchorItem: null
+  property var hostWidget: null
+  readonly property var barIdentity: hostWidget || root
+  readonly property color contentForeground: bar ? bar.foreground : Color.foreground
+  readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property string pluginDir: Qt.resolvedUrl(".").toString().replace("file://", "")
   readonly property string cli: root.pluginDir + "cursor-color"
   readonly property string colorsPath: Quickshell.env("HOME") + "/.local/state/omarchy/current/theme/colors.toml"
 
-  property bool opened: false
   property var config: ({ mode: "theme", theme_key: "accent", color: "#F25623", shape: "modern", style: "outline", recent: [] })
   property var themeColors: ({})
   property string hoverLabel: ""
   property string error: ""
 
-  property color background: Commons.Color.menu.background
-  property color foreground: Commons.Color.menu.text
-  property color border: Commons.Color.menu.border
-  property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
-  property color scrim: Commons.Color.menu.scrim
-  readonly property int contentMargin: Style.spacing.panelPadding
-  readonly property int swatchSize: Style.space(30)
-  readonly property int gap: Style.space(8)
+  readonly property int panelWidth: Style.space(380)
+  readonly property int swatchSize: Style.space(26)
+  readonly property int gap: Style.space(7)
 
-  // Theme keys offered under "Thème", in display order. Only the ones the
-  // active theme's colors.toml defines are shown.
+  // Theme keys offered under "Suivre le thème", in display order. Only the
+  // ones the active theme's colors.toml defines are shown.
   readonly property var themeKeys: [
     { key: "accent", label: "Accent" },
     { key: "cursor", label: "Curseur du terminal" },
@@ -52,25 +50,6 @@ Item {
     { key: "brown", label: "Brun" }
   ]
 
-  readonly property var palette: [
-    { color: "#ffffff", label: "Blanc" },
-    { color: "#c0c0c0", label: "Argent" },
-    { color: "#000000", label: "Noir" },
-    { color: "#ff5555", label: "Rouge" },
-    { color: "#ff9e3b", label: "Orange" },
-    { color: "#ffd75f", label: "Jaune" },
-    { color: "#a6e22e", label: "Lime" },
-    { color: "#39ff14", label: "Vert néon" },
-    { color: "#50fa7b", label: "Vert" },
-    { color: "#2ec4b6", label: "Turquoise" },
-    { color: "#8be9fd", label: "Cyan" },
-    { color: "#4f8cff", label: "Bleu" },
-    { color: "#7c5cff", label: "Indigo" },
-    { color: "#bd93f9", label: "Violet" },
-    { color: "#ff79c6", label: "Rose" },
-    { color: "#ff2d95", label: "Magenta" }
-  ]
-
   readonly property var availableThemeKeys: root.themeKeys.filter(function(k) { return !!root.themeColors[k.key] })
 
   readonly property string currentColor: {
@@ -78,6 +57,9 @@ Item {
     if (root.config.mode === "off") return ""
     return root.themeColors[root.config.theme_key] || root.themeColors.accent || "#F25623"
   }
+
+  // Color under the mouse / being dragged on the disk, before it's applied.
+  readonly property string draftColor: root.colorHex(colorWheel.selectedColor)
 
   readonly property string statusText: {
     if (root.hoverLabel) return root.hoverLabel
@@ -87,29 +69,29 @@ Item {
     return "Suit le thème · " + (entry ? entry.label : root.config.theme_key) + " (" + root.currentColor + ")"
   }
 
-  function open(payloadJson) {
-    root.opened = true
+  function open() {
     root.error = ""
     root.hoverLabel = ""
     hexField.text = ""
     colorsFile.reload()
     statusProcess.running = true
+    root.controller.show()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function close() {
-    root.opened = false
-  }
-
-  function dismiss() {
-    root.opened = false
-    if (root.shell && typeof root.shell.hide === "function")
-      root.shell.hide((root.manifest && root.manifest.id) || "io.github.ldockwiller.cursor-color")
+    root.controller.hide()
   }
 
   function toggle() {
-    if (root.opened) root.dismiss()
-    else root.open("{}")
+    if (root.opened) close()
+    else open()
+  }
+
+  function switchPanel(direction) {
+    if (root.bar && typeof root.bar.switchPanelFrom === "function")
+      return root.bar.switchPanelFrom(root.barIdentity, direction)
+    return false
   }
 
   function parseColors(text) {
@@ -126,7 +108,21 @@ Item {
     return /^[0-9a-f]{6}$/.test(c) ? "#" + c : ""
   }
 
-  // Updates the local state right away so the selection ring moves without
+  function colorHex(c) {
+    function part(v) { var s = Math.round(v * 255).toString(16); return s.length < 2 ? "0" + s : s }
+    return "#" + part(c.r) + part(c.g) + part(c.b)
+  }
+
+  // Moves the disk marker and brightness bar onto `hex`.
+  function showOnWheel(hex) {
+    if (!hex) return
+    var c = Qt.color(hex)
+    if (c.hsvHue >= 0) colorWheel.hue = c.hsvHue
+    colorWheel.saturation = c.hsvSaturation
+    colorWheel.value = c.hsvValue
+  }
+
+  // Updates the local state right away so the selection moves without
   // waiting for the rebuild, then runs the command and re-reads the config.
   function run(args, optimistic) {
     if (optimistic) {
@@ -150,15 +146,21 @@ Item {
       return
     }
     hexField.text = ""
+    root.showOnWheel(color)
     root.setColor(color)
     keyCatcher.forceActiveFocus()
   }
 
   function pickFromScreen() {
-    // The overlay covers the screen, so get out of hyprpicker's way first.
-    root.dismiss()
+    // Get the popup out of hyprpicker's way first.
+    root.close()
     Quickshell.execDetached([root.cli, "pick"])
   }
+
+  onCurrentColorChanged: if (!wheelMouseBusy.running) root.showOnWheel(root.currentColor)
+
+  // Keeps a config refresh from yanking the marker while the user drags.
+  Timer { id: wheelMouseBusy; interval: 800 }
 
   FileView {
     id: colorsFile
@@ -170,7 +172,7 @@ Item {
 
   Process {
     id: statusProcess
-    running: false
+    running: true
     command: [root.cli, "status"]
     stdout: StdioCollector {
       onStreamFinished: {
@@ -197,16 +199,16 @@ Item {
     height: root.swatchSize
     radius: width / 2
     color: "transparent"
-    border.width: swatch.selected ? Math.max(2, Style.space(2)) : (mouse.containsMouse ? 1 : 0)
-    border.color: root.foreground
+    border.width: swatch.selected ? 2 : (mouse.containsMouse ? 1 : 0)
+    border.color: root.contentForeground
 
     Rectangle {
       anchors.fill: parent
-      anchors.margins: Math.max(3, Style.space(4))
+      anchors.margins: 4
       radius: width / 2
       color: swatch.swatchColor
       border.width: 1
-      border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.25)
+      border.color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.25)
     }
 
     MouseArea {
@@ -222,67 +224,36 @@ Item {
 
   component SectionLabel: Text {
     textFormat: Text.PlainText
-    color: root.foreground
-    opacity: 0.6
-    font.family: Style.font.family
+    color: Qt.darker(root.contentForeground, 1.35)
+    font.family: root.contentFontFamily
     font.pixelSize: Style.font.caption
+    font.bold: true
+    font.letterSpacing: 1.0
     font.capitalization: Font.AllUppercase
-    font.letterSpacing: 1
   }
 
-  PanelWindow {
+  KeyboardPanel {
     id: panel
-    visible: root.opened
-    anchors { top: true; bottom: true; left: true; right: true }
-    color: "transparent"
-    WlrLayershell.namespace: "omarchy-cursor-color"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
-    exclusionMode: ExclusionMode.Ignore
+    anchorItem: root.anchorItem
+    owner: root.barIdentity
+    bar: root.bar
+    open: root.opened
+    centerOnBar: true
+    focusTarget: keyCatcher
+    contentWidth: panel.fittedContentWidth(root.panelWidth)
+    contentHeight: panel.fittedContentHeight(content.implicitHeight, Style.space(760))
 
-    Rectangle {
+    PanelKeyCatcher {
+      id: keyCatcher
       anchors.fill: parent
-      color: root.scrim
-    }
-
-    MouseArea {
-      anchors.fill: parent
-      onClicked: root.dismiss()
-    }
-
-    BorderSurface {
-      id: card
-      width: Math.min(Style.space(440), panel.width - Style.gapsOut * 2)
-      height: content.implicitHeight + card.contentTopInset + card.contentBottomInset
-      radius: Style.cornerRadius
-      anchors.centerIn: parent
-      color: root.background
-      borderSpec: root.borderSpec
-      padding: root.contentMargin
-
-      MouseArea { anchors.fill: parent; onClicked: keyCatcher.forceActiveFocus() }
-
-      Item {
-        id: keyCatcher
-        anchors.fill: parent
-        focus: true
-        Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) {
-            root.dismiss()
-            event.accepted = true
-          }
-        }
-      }
+      blocked: hexField.activeFocus
+      onCloseRequested: root.close()
+      onTabRequested: function(direction) { root.switchPanel(direction) }
 
       ColumnLayout {
         id: content
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.topMargin: card.contentTopInset
-        anchors.leftMargin: card.contentLeftInset
-        anchors.rightMargin: card.contentRightInset
-        spacing: Style.space(14)
+        width: parent.width
+        spacing: Style.space(12)
 
         // Header: live preview + current mode.
         RowLayout {
@@ -290,12 +261,14 @@ Item {
           spacing: Style.space(12)
 
           Rectangle {
-            Layout.preferredWidth: Style.space(40)
-            Layout.preferredHeight: Style.space(40)
+            Layout.preferredWidth: Style.space(36)
+            Layout.preferredHeight: Style.space(36)
             radius: width / 2
-            color: root.currentColor || "transparent"
-            border.width: root.currentColor ? 1 : Math.max(2, Style.space(2))
-            border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, root.currentColor ? 0.25 : 0.6)
+            color: root.hoverLabel !== "" && root.hoverLabel.indexOf("#") >= 0
+              ? root.hoverLabel.substring(root.hoverLabel.indexOf("#"), root.hoverLabel.indexOf("#") + 7)
+              : (root.currentColor || "transparent")
+            border.width: root.currentColor ? 1 : 2
+            border.color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, root.currentColor ? 0.25 : 0.6)
           }
 
           ColumnLayout {
@@ -304,8 +277,8 @@ Item {
             Text {
               textFormat: Text.PlainText
               text: "Couleur du curseur"
-              color: root.foreground
-              font.family: Style.font.family
+              color: root.contentForeground
+              font.family: root.contentFontFamily
               font.pixelSize: Style.font.heading
               font.bold: true
             }
@@ -313,10 +286,10 @@ Item {
               Layout.fillWidth: true
               textFormat: Text.PlainText
               text: root.statusText
-              color: root.foreground
+              color: root.contentForeground
               opacity: 0.7
               elide: Text.ElideRight
-              font.family: Style.font.family
+              font.family: root.contentFontFamily
               font.pixelSize: Style.font.bodySmall
             }
           }
@@ -338,63 +311,89 @@ Item {
           }
         }
 
-        SectionLabel { text: "Palette" }
-        Flow {
+        SectionLabel { text: "Couleur libre" }
+
+        ColorWheel {
+          id: colorWheel
+          Layout.alignment: Qt.AlignHCenter
+          Layout.preferredWidth: Style.space(220)
+          Layout.preferredHeight: Style.space(220)
+          borderColor: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.3)
+          onHovered: function(c) { root.hoverLabel = "Aperçu · " + root.colorHex(c) }
+          onHoverEnded: if (root.hoverLabel.indexOf("Aperçu · ") === 0) root.hoverLabel = ""
+          onMoved: {
+            wheelMouseBusy.restart()
+            root.hoverLabel = "Aperçu · " + root.draftColor
+          }
+          onCommitted: {
+            wheelMouseBusy.restart()
+            root.setColor(root.draftColor)
+          }
+        }
+
+        // Brightness (HSV value) for the disk.
+        Item {
+          id: brightness
           Layout.fillWidth: true
-          spacing: root.gap
-          Repeater {
-            model: root.palette
-            delegate: Swatch {
-              required property var modelData
-              swatchColor: modelData.color
-              label: modelData.label
-              selected: root.config.mode === "fixed" && String(root.config.color).toLowerCase() === modelData.color
-              onPicked: root.setColor(modelData.color)
+          Layout.preferredHeight: Style.space(18)
+
+          Rectangle {
+            anchors.fill: parent
+            anchors.topMargin: Style.space(3)
+            anchors.bottomMargin: Style.space(3)
+            radius: height / 2
+            border.width: 1
+            border.color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.3)
+            gradient: Gradient {
+              orientation: Gradient.Horizontal
+              GradientStop { position: 0; color: "#000000" }
+              GradientStop { position: 1; color: Qt.hsva(colorWheel.hue, colorWheel.saturation, 1, 1) }
+            }
+          }
+
+          Rectangle {
+            width: parent.height
+            height: parent.height
+            radius: width / 2
+            x: colorWheel.value * (brightness.width - width)
+            color: colorWheel.selectedColor
+            border.width: 2
+            border.color: root.contentForeground
+          }
+
+          MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            preventStealing: true
+            function setFrom(mouse) {
+              wheelMouseBusy.restart()
+              colorWheel.value = Math.max(0, Math.min(1, mouse.x / brightness.width))
+              root.hoverLabel = "Aperçu · " + root.draftColor
+            }
+            onPressed: function(mouse) { setFrom(mouse) }
+            onPositionChanged: function(mouse) { if (pressed) setFrom(mouse) }
+            onReleased: {
+              root.hoverLabel = ""
+              root.setColor(root.draftColor)
             }
           }
         }
 
-        SectionLabel {
-          text: "Récentes"
-          visible: (root.config.recent || []).length > 0
-        }
-        Flow {
-          Layout.fillWidth: true
-          spacing: root.gap
-          visible: (root.config.recent || []).length > 0
-          Repeater {
-            model: root.config.recent || []
-            delegate: Swatch {
-              required property var modelData
-              swatchColor: modelData
-              label: "Récente"
-              selected: root.config.mode === "fixed" && String(root.config.color).toLowerCase() === String(modelData).toLowerCase()
-              onPicked: root.setColor(modelData)
-            }
-          }
-        }
-
-        SectionLabel { text: "Code couleur" }
         RowLayout {
           Layout.fillWidth: true
           spacing: root.gap
 
-          Rectangle {
-            Layout.preferredWidth: Style.space(28)
-            Layout.preferredHeight: Style.space(28)
-            radius: width / 2
-            color: root.normalizeHex(hexField.text) || "transparent"
-            border.width: 1
-            border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.35)
-          }
-
           TextField {
             id: hexField
             Layout.fillWidth: true
-            placeholderText: "#rrggbb"
+            placeholderText: root.draftColor
             maximumLength: 7
+            onTextChanged: {
+              var c = root.normalizeHex(text)
+              if (c.length === 7 && text.replace("#", "").length === 6) root.showOnWheel(c)
+            }
             onAccepted: root.applyHex()
-            Keys.onEscapePressed: root.dismiss()
+            Keys.onEscapePressed: keyCatcher.forceActiveFocus()
           }
 
           Button {
@@ -418,14 +417,37 @@ Item {
           text: root.error
           color: Commons.Color.urgent
           wrapMode: Text.Wrap
-          font.family: Style.font.family
+          font.family: root.contentFontFamily
           font.pixelSize: Style.font.bodySmall
+        }
+
+        SectionLabel {
+          text: "Récentes"
+          visible: (root.config.recent || []).length > 0
+        }
+        Flow {
+          Layout.fillWidth: true
+          spacing: root.gap
+          visible: (root.config.recent || []).length > 0
+          Repeater {
+            model: root.config.recent || []
+            delegate: Swatch {
+              required property var modelData
+              swatchColor: modelData
+              label: "Récente"
+              selected: root.config.mode === "fixed" && String(root.config.color).toLowerCase() === String(modelData).toLowerCase()
+              onPicked: {
+                root.showOnWheel(modelData)
+                root.setColor(modelData)
+              }
+            }
+          }
         }
 
         SectionLabel { text: "Apparence" }
         RowLayout {
           Layout.fillWidth: true
-          spacing: Style.space(12)
+          spacing: Style.space(10)
 
           ButtonGroup {
             options: [{ value: "modern", label: "Arrondi" }, { value: "original", label: "Pointu" }]
