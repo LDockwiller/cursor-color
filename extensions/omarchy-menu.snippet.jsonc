@@ -1,0 +1,4 @@
+// Style > Couleur du curseur entry for io.github.ldockwiller.cursor-color.
+// Spliced into ~/.config/omarchy/extensions/omarchy-menu.jsonc by
+// tools/install-menu-entry.sh.
+  "style.cursorcolor": {"icon":"󰇀","label":"Couleur du curseur","description":"Palette, code hex ou couleur du thème","action":"$HOME/.config/omarchy/plugins/io.github.ldockwiller.cursor-color/cursor-color open"},

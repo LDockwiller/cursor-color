@@ -1,0 +1,97 @@
+#!/bin/bash
+# Configure and reapply the cursor color.
+#
+# Usage:
+#   cursor-color open                   # open the palette picker
+#   cursor-color theme [key]            # follow the active theme (accent, blue, magenta, ...)
+#   cursor-color set '#rrggbb'          # fixed color, ignores theme switches
+#   cursor-color pick                   # pick a fixed color from the screen (hyprpicker)
+#   cursor-color default                # turn this off, use the system default cursor
+#   cursor-color shape modern|original  # rounded (default) or classic pointed
+#   cursor-color style outline|filled   # colored outline (default) or colored body
+#   cursor-color apply                  # re-apply the current settings
+#   cursor-color status                 # show current config
+set -euo pipefail
+PLUGIN_DIR="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
+PLUGIN_ID="io.github.ldockwiller.cursor-color"
+STATE_DIR="$HOME/.local/state/cursor-color"
+CONFIG="$STATE_DIR/config.json"
+DEFAULT_CONFIG='{"mode":"theme","theme_key":"accent","color":"#F25623","shape":"modern","style":"outline","recent":[]}'
+
+read_config() {
+  if [[ -f $CONFIG ]]; then
+    jq -s '.[0] * .[1]' <(echo "$DEFAULT_CONFIG") "$CONFIG" 2>/dev/null || echo "$DEFAULT_CONFIG"
+  else
+    echo "$DEFAULT_CONFIG"
+  fi
+}
+
+write_and_apply() {
+  mkdir -p "$STATE_DIR"
+  echo "$1" > "$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
+  python3 "$PLUGIN_DIR/recolor.py"
+}
+
+# Accepts #rrggbb, rrggbb, #rgb or rgb and prints #rrggbb in lowercase.
+normalize_hex() {
+  local c="${1#\#}"
+  c="${c,,}"
+  if [[ $c =~ ^[0-9a-f]{3}$ ]]; then
+    c="${c:0:1}${c:0:1}${c:1:1}${c:1:1}${c:2:1}${c:2:1}"
+  fi
+  [[ $c =~ ^[0-9a-f]{6}$ ]] || return 1
+  echo "#$c"
+}
+
+set_fixed() {
+  local color
+  color=$(normalize_hex "$1") || { echo "Couleur invalide : '$1' (attendu #rrggbb)" >&2; exit 1; }
+  write_and_apply "$(read_config | jq --arg c "$color" '
+    .mode = "fixed" | .color = $c
+    | .recent = ([$c] + ((.recent // []) - [$c]))[:8]')"
+}
+
+usage() {
+  echo "Usage: cursor-color open | theme [key] | set '#rrggbb' | pick | default | shape modern|original | style outline|filled | apply | status" >&2
+  exit 1
+}
+
+case "${1:-}" in
+  open)
+    omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
+    ;;
+  theme|follow)
+    key="${2:-accent}"
+    [[ $key =~ ^[a-z_]+$ ]] || { echo "Clé de thème invalide : '$key'" >&2; exit 1; }
+    write_and_apply "$(read_config | jq --arg k "$key" '.mode = "theme" | .theme_key = $k')"
+    ;;
+  set|fixed)
+    [[ -n ${2:-} ]] || usage
+    set_fixed "$2"
+    ;;
+  pick)
+    picked=$(hyprpicker -f hex -l 2>/dev/null | grep -oE '#[0-9a-fA-F]{6}' | tail -n1 || true)
+    [[ -n $picked ]] || { echo "Aucune couleur choisie." >&2; exit 130; }
+    set_fixed "$picked"
+    ;;
+  default|off)
+    write_and_apply "$(read_config | jq '.mode = "off"')"
+    ;;
+  shape)
+    [[ ${2:-} == "modern" || ${2:-} == "original" ]] || usage
+    write_and_apply "$(read_config | jq --arg s "$2" '.shape = $s')"
+    ;;
+  style)
+    [[ ${2:-} == "outline" || ${2:-} == "filled" ]] || usage
+    write_and_apply "$(read_config | jq --arg s "$2" '.style = $s')"
+    ;;
+  apply)
+    python3 "$PLUGIN_DIR/recolor.py" ${2:+"$2"}
+    ;;
+  status)
+    read_config | jq .
+    ;;
+  *)
+    usage
+    ;;
+esac
